@@ -1,0 +1,7 @@
+# Netlify: connect the repository and it reads this file. Headers come from dist/_headers.
+[build]
+  command = "node scripts/build.mjs"
+  publish = "dist"
+
+[build.environment]
+  NODE_VERSION = "20"
