@@ -75,7 +75,7 @@ Things you will edit most often, all near the top of `src/ui.js`:
 
 ## Deploy it on Render
 
-The root-level `render.yaml` is a Render Blueprint. It creates one **free Node web service** called `test-my-trade` that:
+The root-level `render.yaml` is a Render Blueprint. It creates one **free Node web service** called `test-my-trade-app` that:
 
 - runs the tests, then builds `dist/` (`npm test && npm run build`), so a broken build never goes live;
 - starts `node scripts/serve.mjs`, which serves the site with its security headers (CSP and friends) and runs the Grok relay;
@@ -94,7 +94,7 @@ The root-level `render.yaml` is a Render Blueprint. It creates one **free Node w
 2. Sign in at <https://dashboard.render.com> with GitHub.
 3. Click **New → Blueprint**, pick this repository, and click **Apply**. Render reads `render.yaml` and creates the service.
    - If you already created a Static Site from the old `render.yaml`, delete that one first (Settings → Delete), or the names clash.
-4. Wait for the first deploy (2–3 minutes). Your site is live at `https://test-my-trade.onrender.com` (Render adds a suffix if the name is taken).
+4. Wait for the first deploy (2–3 minutes). Your site is live at `https://test-my-trade-app.onrender.com` (Render adds a suffix if the name is taken).
 5. Every `git push` to `main` redeploys automatically.
 
 No environment variables or secrets are needed: visitors bring their own AI keys, and the server never stores them.
@@ -114,7 +114,7 @@ Buy the domain from any registrar, then add it in your Render site's **Settings 
 
 ## Admin page: your site statistics
 
-Open `/admin` on your site (for example `https://test-my-trade.onrender.com/admin`) and enter your admin password. It shows:
+Open `/admin` on your site (for example `https://test-my-trade-app.onrender.com/admin`) and enter your admin password. It shows:
 
 - visitors on the site right now, visitors and page views per day, and simulations run per day;
 - the most-visited screens, strategy types and templates used, synthetic vs own data, AI helper use, phone vs computer, and which websites sent visitors (LinkedIn, GitHub and so on);

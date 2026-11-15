@@ -3,7 +3,7 @@
 # counts anonymous usage, and serves the private admin page at /admin.
 services:
   - type: web
-    name: test-my-trade
+    name: test-my-trade-app
     runtime: node
     plan: free
     region: singapore
