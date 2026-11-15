@@ -1,6 +1,24 @@
+# Render Blueprint: one free Node web service.
+# It serves the site with its security headers, runs the small relay that Grok (xAI) needs,
+# counts anonymous usage, and serves the private admin page at /admin.
 services:
   - type: web
     name: test-my-trade
-    runtime: static
-    buildCommand: npm run build
-    staticPublishPath: ./dist
+    runtime: node
+    plan: free
+    region: singapore
+    buildCommand: npm test && npm run build
+    startCommand: node scripts/serve.mjs
+    healthCheckPath: /healthz
+    autoDeploy: true
+    envVars:
+      - key: NODE_VERSION
+        value: "20"
+      # Password for /admin. Render asks you for it when you apply the Blueprint. Use 12+ characters.
+      - key: ADMIN_TOKEN
+        sync: false
+      # From your free Upstash Redis database (REST API section). Without them, counts reset when the service sleeps.
+      - key: UPSTASH_REDIS_REST_URL
+        sync: false
+      - key: UPSTASH_REDIS_REST_TOKEN
+        sync: false

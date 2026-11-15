@@ -134,6 +134,11 @@ function addCosts(out, c, m) {
   Object.keys(c).forEach(function (k) { out.cost[k] += c[k] * m; });
   return total;
 }
+function monthOf(day) {
+  const d = day.date;
+  if (!(d instanceof Date) || isNaN(d)) return null;
+  return d.getUTCFullYear() + '-' + String(d.getUTCMonth() + 1).padStart(2, '0');
+}
 function finish(out) {
   out.totalCost = out.gross - out.net;
   let eq = 0, peak = 0, dd = 0, eqG = 0;
@@ -154,6 +159,7 @@ function simSwing(days, st, costs, opt) {
   let entry = null;
   for (let d = 0; d < days.length; d++) {
     let gross = 0, net = 0;
+    const t0 = out.trades;
     if (d >= Math.max(N, M)) {
       if (entry === null) {
         if (cl[d] > Math.max.apply(null, cl.slice(d - N, d))) entry = cl[d];
@@ -171,7 +177,7 @@ function simSwing(days, st, costs, opt) {
       }
     }
     out.gross += gross; out.net += net;
-    out.daily.push({ label: days[d].label, gross: gross, net: net });
+    out.daily.push({ label: days[d].label, month: monthOf(days[d]), trade: out.trades > t0, gross: gross, net: net });
   }
   return finish(out);
 }
@@ -242,7 +248,7 @@ function simulate(days, st, costs, opt) {
       out.trades++; if (net > 0) out.wins++; if (stopHit) out.stopped++;
     }
     out.gross += gross; out.net += net;
-    out.daily.push({ label: day.label, gross: gross, net: net });
+    out.daily.push({ label: day.label, month: monthOf(day), trade: pos.length > 0, gross: gross, net: net });
   }
   return finish(out);
 }
@@ -268,4 +274,50 @@ function runChecks(days, st, costs, base, synth) {
   }
   return c;
 }
-if (typeof module !== 'undefined') module.exports = { genMarket: genMarket, simulate: simulate, runChecks: runChecks, parseOwnData: parseOwnData, optionPrice: optionPrice, SYN_TIMES: SYN_TIMES };
+/* Trade and risk statistics from a finished result. Each trading day holds at most one closed trade. */
+function computeStats(res) {
+  const daily = res.daily, tr = daily.filter(function (d) { return d.trade; }).map(function (d) { return d.net; });
+  const wins = tr.filter(function (x) { return x > 0; }), losses = tr.filter(function (x) { return x <= 0; });
+  const sum = function (a) { return a.reduce(function (s, x) { return s + x; }, 0); };
+  const mean = function (a) { return a.length ? sum(a) / a.length : 0; };
+  const winSum = sum(wins), lossSum = -sum(losses);
+  let ws = 0, ls = 0, maxWs = 0, maxLs = 0;
+  tr.forEach(function (x) { if (x > 0) { ws++; ls = 0; } else { ls++; ws = 0; } maxWs = Math.max(maxWs, ws); maxLs = Math.max(maxLs, ls); });
+  const rets = daily.map(function (d) { return d.net; }), mu = mean(rets);
+  const sd = Math.sqrt(mean(rets.map(function (x) { return (x - mu) * (x - mu); })));
+  const down = Math.sqrt(mean(rets.map(function (x) { return x < 0 ? x * x : 0; })));
+  const under = [];
+  let peak = 0, longest = 0, run = 0;
+  res.eqNet.forEach(function (v) { if (v >= peak) { peak = v; run = 0; } else { run++; } longest = Math.max(longest, run); under.push(v - peak); });
+  const dated = daily.every(function (d) { return d.month; }), months = [];
+  daily.forEach(function (d, i) {
+    const key = dated ? d.month : 'Days ' + (Math.floor(i / 21) * 21 + 1) + '–' + Math.min(Math.floor(i / 21) * 21 + 21, daily.length);
+    const last = months[months.length - 1];
+    if (last && last.label === key) { last.net += d.net; last.trades += d.trade ? 1 : 0; }
+    else months.push({ label: key, net: d.net, trades: d.trade ? 1 : 0 });
+  });
+  let hist = [];
+  if (tr.length) {
+    const lo = Math.min.apply(null, tr), hi = Math.max.apply(null, tr), k = Math.min(12, Math.max(4, Math.ceil(Math.sqrt(tr.length)))), w = (hi - lo) / k || 1;
+    for (let i = 0; i < k; i++) hist.push({ from: lo + i * w, to: lo + (i + 1) * w, count: 0 });
+    tr.forEach(function (x) { hist[Math.min(k - 1, Math.floor((x - lo) / w))].count++; });
+  }
+  return {
+    trades: tr.length, wins: wins.length, losses: losses.length,
+    winRate: tr.length ? wins.length / tr.length : 0,
+    avgWin: mean(wins), avgLoss: losses.length ? -mean(losses) : 0,
+    payoff: losses.length && wins.length ? mean(wins) / -mean(losses) : null,
+    profitFactor: lossSum > 0 ? winSum / lossSum : null,
+    expectancy: mean(tr),
+    best: tr.length ? Math.max.apply(null, tr) : 0, worst: tr.length ? Math.min.apply(null, tr) : 0,
+    maxWinStreak: maxWs, maxLossStreak: maxLs,
+    sharpe: sd > 0 ? mu / sd * Math.sqrt(252) : null,
+    sortino: down > 0 ? mu / down * Math.sqrt(252) : null,
+    maxDD: res.maxDD, longestDD: longest,
+    recovery: res.maxDD > 0 ? res.net / res.maxDD : null,
+    costPerTrade: tr.length ? res.totalCost / tr.length : 0,
+    costShare: res.gross > 0 ? res.totalCost / res.gross : null,
+    dated: dated, months: months, hist: hist, under: under
+  };
+}
+if (typeof module !== 'undefined') module.exports = { computeStats: computeStats, genMarket: genMarket, simulate: simulate, runChecks: runChecks, parseOwnData: parseOwnData, optionPrice: optionPrice, SYN_TIMES: SYN_TIMES };

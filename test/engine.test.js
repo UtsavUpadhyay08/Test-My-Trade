@@ -73,3 +73,32 @@ test('own-data parser reads a CSV and rejects bad files with a plain message', (
   assert.throws(() => E.parseOwnData('a,b\n1,2', 2), /too few rows/);
   assert.throws(() => E.parseOwnData('x,y\n' + '1,2\n'.repeat(30), 2), /date/);
 });
+
+test('statistics agree with the simulation and are internally consistent', () => {
+  for (const [name, st] of Object.entries(strategies)) {
+    const r = E.simulate(E.genMarket(11, 'mixed', 180), st, costs), s = E.computeStats(r);
+    assert.equal(s.trades, r.trades, name + ' trade count');
+    assert.equal(s.wins, r.wins, name + ' win count');
+    assert.equal(s.wins + s.losses, s.trades);
+    assert.equal(s.hist.reduce((a, b) => a + b.count, 0), s.trades, name + ' histogram covers every trade');
+    assert.ok(Math.abs(s.months.reduce((a, m) => a + m.net, 0) - r.net) < 1e-6, name + ' monthly results add up');
+    if (s.trades) assert.ok(Math.abs(s.expectancy * s.trades - r.net) < 1e-6, name + ' average per trade');
+    assert.ok(Math.min(...s.under) >= -r.maxDD - 1e-9 && Math.abs(Math.min(...s.under) + r.maxDD) < 1e-6, name + ' underwater depth equals drawdown');
+    assert.ok(s.maxLossStreak <= s.losses && s.maxWinStreak <= s.wins);
+  }
+});
+
+test('statistics group own data by calendar month', () => {
+  const rows = ['date,time,close'];
+  for (let d = 1; d <= 70; d++) {
+    const day = new Date(Date.UTC(2025, 0, 1) + d * 86400000);
+    if (day.getUTCDay() === 0 || day.getUTCDay() === 6) continue;
+    const ds = day.toISOString().slice(0, 10);
+    for (let m = 0; m < 75; m++) { const t = 9 * 60 + 15 + 5 * m; rows.push(ds + ',' + String(Math.floor(t / 60)).padStart(2, '0') + ':' + String(t % 60).padStart(2, '0') + ',' + (22000 + 40 * Math.sin(d + m / 9)).toFixed(2)); }
+  }
+  const parsed = E.parseOwnData(rows.join('\n'), 4);
+  const days = parsed.days || parsed;
+  const s = E.computeStats(E.simulate(days, strategies.straddle, costs));
+  assert.ok(s.dated);
+  assert.deepEqual(s.months.map(m => m.label), ['2025-01', '2025-02', '2025-03']);
+});

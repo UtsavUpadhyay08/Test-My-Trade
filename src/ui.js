@@ -29,7 +29,7 @@ const S = {
   strat: { kind: 'legs', name: 'Short straddle', entry: '09:20', exit: '15:15', orbEnd: '09:45', lots: 1, lotSize: 65, step: 50, days: 'all', sl: 30, target: 60, fast: 9, slow: 21, lookN: 20, exitM: 10, legs: TPL[0].legs() },
   costs: { brok: 20, stt: 0.15, exch: 0.03553, sebi: 0.0001, gst: 18, stamp: 0.003, slip: 0.5, sttFut: 0.05, exchFut: 0.00183, stampFut: 0.002, slipFut: 0.02 },
   data: { kind: 'synthetic', market: 'mixed', seed: 20261114, days: 250 },
-  own: null, agreed: false, result: null, memRuns: 0, explainTab: 'screen', openTerm: null, ai: null
+  own: null, agreed: false, result: null, memRuns: 0, explainTab: 'screen', openTerm: null, ai: null, history: []
 };
 const store = {
   get: function (k) { try { return JSON.parse(localStorage.getItem(k)); } catch (e) { return null; } },
@@ -102,6 +102,24 @@ const GLOSSARY = [
   { id: 'winrate', title: 'Winning trades', kind: 'Report', short: 'How often a trade ended in profit',
     what: 'The share of trades that ended with a profit after costs. For intraday strategies, all the legs opened on one day count as one trade.',
     example: '150 winning trades out of 250 is 60%.', risk: 'A high share says little alone. A strategy can win often and still lose money if the losses are much larger.', rel: ['drawdown', 'outlier'] },
+  { id: 'profitfactor', title: 'Profit factor', kind: 'Statistic', short: 'Money won on winning trades divided by money lost on losing trades',
+    what: 'Add up every winning trade, add up every losing trade, and divide the first by the second. Above 1 means winners brought in more than losers took away, after costs.',
+    example: 'Winners total \u20b960,000 and losers total \u20b940,000, so the profit factor is 1.5.', risk: 'A few large winners can lift it. With only a handful of trades it can swing a lot from one run to the next.', rel: ['expectancy', 'payoff'] },
+  { id: 'expectancy', title: 'Average per trade', kind: 'Statistic', short: 'The average result of one trade, after costs',
+    what: 'The total after-costs result divided by the number of trades. It combines how often you win with how much you win or lose each time.',
+    example: '\u20b912,000 over 60 trades is \u20b9200 per trade.', risk: 'An average hides the spread. Two strategies with the same average can have very different worst trades.', rel: ['profitfactor', 'payoff'] },
+  { id: 'payoff', title: 'Win/loss size ratio', kind: 'Statistic', short: 'How big the average win is compared with the average loss',
+    what: 'The average winning trade divided by the average losing trade. Read it together with the share of winning trades.',
+    example: 'An average win of \u20b93,000 and an average loss of \u20b91,500 gives a ratio of 2.', risk: 'A low ratio needs a high win rate to break even, and a high ratio can live with a low one. Neither is good or bad alone.', rel: ['winrate', 'expectancy'] },
+  { id: 'streak', title: 'Losing streak', kind: 'Statistic', short: 'The most losing trades in a row',
+    what: 'The longest run of trades that each ended in a loss after costs. Winning streaks are counted the same way.',
+    example: 'Loss, loss, loss, win is a losing streak of 3.', risk: 'Long streaks happen by chance even with sound rules. The next streak can be longer than any in the test.', rel: ['drawdown', 'winrate'] },
+  { id: 'sharpe', title: 'Sharpe and Sortino ratios', kind: 'Statistic', short: 'Average daily result compared with how much it bounced around',
+    what: 'The Sharpe ratio is the average daily result divided by how much daily results vary, scaled to a year of about 252 trading days. The Sortino ratio is the same but counts only the down days as variation.',
+    example: 'Two strategies earn the same total; the one with steadier days has the higher ratio.', risk: 'These ratios assume results are spread out evenly. Option selling often looks steady until one very bad day, which these numbers can understate.', rel: ['drawdown', 'recovery'] },
+  { id: 'recovery', title: 'Recovery factor', kind: 'Statistic', short: 'Total result divided by the largest drawdown',
+    what: 'The after-costs total divided by the maximum drawdown. It asks how much the strategy made for each rupee of the worst fall you would have sat through.',
+    example: 'A total of \u20b930,000 with a worst fall of \u20b910,000 gives 3.', risk: 'It uses only the single worst fall in this test. A deeper fall can come later.', rel: ['drawdown', 'sharpe'] },
   { id: 'sensitivity', title: 'Sensitivity to settings', kind: 'Check', short: 'How much the result changes when rules change slightly',
     what: 'The tool re-runs your rules four times with one setting nudged slightly each time, then shows the lowest and highest result.',
     example: 'A result of ₹40,000 that ranges from −₹20,000 to ₹90,000 under small changes depends heavily on the exact settings.', risk: 'A result that only holds for one exact setting is usually luck, not a rule that works.', rel: ['outlier'] },
@@ -120,9 +138,10 @@ const SCREEN_TERMS = {
   build: ['leg', 'straddle', 'condor', 'orb', 'ema', 'swing', 'atm', 'strike', 'lot', 'stoploss', 'target', 'expiry'],
   data: ['practice', 'owndata', 'premium'], review: ['charges', 'slippage', 'netgross'],
   report: ['netgross', 'drawdown', 'winrate', 'charges', 'slippage', 'sensitivity', 'outlier', 'practice'],
+  stats: ['profitfactor', 'expectancy', 'payoff', 'streak', 'sharpe', 'recovery', 'drawdown', 'winrate'],
   learn: [], ai: [], rates: ['charges', 'slippage', 'lot'], disclaimer: ['practice'], privacy: ['owndata'], terms: ['owndata']
 };
-const VIEWS = ['build', 'data', 'review', 'report', 'learn', 'rates', 'ai', 'disclaimer', 'privacy', 'terms'];
+const VIEWS = ['build', 'data', 'review', 'report', 'stats', 'learn', 'rates', 'ai', 'disclaimer', 'privacy', 'terms'];
 const STEPS = [['build', 'Strategy'], ['data', 'Data'], ['review', 'Run'], ['report', 'Report']];
 function current() { const h = location.hash.replace('#', ''); return VIEWS.indexOf(h) >= 0 ? h : 'build'; }
 
@@ -285,7 +304,7 @@ function vReport() {
     checks += check(c.top5Share > 0.3, 'Dependence on the best days', 'The five best days produced ' + pct(c.top5Share) + ' of all winning-day profit.', 'outlier');
     if (synth) checks += check(c.seedProfitable < 4, 'Other synthetic markets', 'On 5 other synthetic markets of the same type, the result ranged from ' + inr(c.seedMin, true) + ' to ' + inr(c.seedMax, true) + ', and was positive in ' + c.seedProfitable + ' of 5.', 'practice');
   }
-  return '<div class="note" role="note">' + banner + '</div><div class="headrow"><div><h1>' + esc(R.name) + '</h1><p class="muted small">' + esc(R.words) + '</p><p class="muted small">' + r.daily.length + ' trading days simulated, ' + r.trades + ' trades' + (r.skipped ? ', ' + r.skipped + ' days skipped for missing times' : '') + '. ' + esc(R.dataText) + ' Rates checked ' + CHECKED + '.</p></div><a class="btn" href="#build">Edit strategy</a></div>' +
+  return '<div class="note" role="note">' + banner + '</div><div class="headrow"><div><h1>' + esc(R.name) + '</h1><p class="muted small">' + esc(R.words) + '</p><p class="muted small">' + r.daily.length + ' trading days simulated, ' + r.trades + ' trades' + (r.skipped ? ', ' + r.skipped + ' days skipped for missing times' : '') + '. ' + esc(R.dataText) + ' Rates checked ' + CHECKED + '.</p></div><div class="row"><a class="btn" href="#stats">Full statistics</a><a class="btn" href="#build">Edit strategy</a></div></div>' +
     '<section id="tiles" class="tiles">' + tile('After costs', inr(r.net, true), 'Before costs ' + inr(r.gross, true), 'netgross', r.net >= 0 ? 'pos' : 'neg') + tile('Maximum drawdown', inr(-r.maxDD), 'Largest fall from a peak', 'drawdown') + tile('Winning trades', r.trades ? pct(r.wins / r.trades) : '0%', r.wins + ' of ' + r.trades + ' trades', 'winrate') + tile('Stopped out', String(r.stopped), 'of ' + r.trades + ' trades hit a stop-loss', 'stoploss') + '</section>' +
     '<div class="cols"><section id="chart-card" class="card grow"><div class="headrow"><h2 class="h3">Running total</h2><span class="legend"><span><i class="l1"></i>After costs</span><span><i class="l2"></i>Before costs</span></span></div>' + chart(r) + strip(r) + '</section><section id="checks-card" class="card side"><h2 class="h3">What the checks show</h2><ul class="checks">' + checks + '</ul></section></div>' +
     '<div class="cols"><section class="card grow"><h2 class="h3">Where the costs went ' + term('charges', 'Explain') + '</h2><p class="muted small">' + nw(inr(r.totalCost)) + ' in total' + (costShare !== null && costShare <= 1 ? ', ' + pct(costShare) + ' of the before-costs result' : '') + '. Rates are on the <a href="#rates">Rates</a> page.</p><div class="bars">' + costRows.map(function (x) { return '<div class="bar"><span>' + x[0] + '</span><div class="track"><div style="width:' + Math.max(x[1] / maxC * 100, 1).toFixed(1) + '%"></div></div><span class="mono">' + inr(x[1]) + '</span></div>'; }).join('') + '</div></section>' +
@@ -294,6 +313,61 @@ function vReport() {
 function entryHtml(g, open) {
   if (!open) return '<li><button type="button" class="gl" data-open="' + g.id + '" aria-expanded="false"><strong>' + g.title + '</strong><span>' + g.short + '</span></button></li>';
   return '<li><article class="entry"><div class="headrow"><h3>' + g.title + '</h3><span class="pill">' + g.kind + '</span></div><p>' + nw(g.what) + '</p><h4>A worked example</h4><p>' + nw(g.example) + '</p><h4>What to watch for</h4><p>' + nw(g.risk) + '</p><p class="rel">Related: ' + g.rel.map(function (id) { return '<button type="button" class="term" data-open="' + id + '">' + G[id].title + '</button>'; }).join(' ') + '</p></article></li>';
+}
+function barSvg(items, label) {
+  const W = 720, H = 220, L = 70, R = 12, T = 12, B = 40, n = items.length;
+  let lo = Math.min(0, Math.min.apply(null, items.map(function (x) { return x.v; }))), hi = Math.max(0, Math.max.apply(null, items.map(function (x) { return x.v; })));
+  if (hi === lo) hi = lo + 1;
+  const Y = function (v) { return T + (H - T - B) * (hi - v) / (hi - lo); }, bw = (W - L - R) / n, every = Math.ceil(n / 12);
+  let g = '';
+  for (let k = 0; k <= 4; k++) { const v = lo + (hi - lo) * k / 4; g += '<line class="g" x1="' + L + '" x2="' + (W - R) + '" y1="' + Y(v).toFixed(1) + '" y2="' + Y(v).toFixed(1) + '"/><text x="' + (L - 8) + '" y="' + (Y(v) + 4).toFixed(1) + '" text-anchor="end" class="ax">' + inr(v) + '</text>'; }
+  items.forEach(function (x, i) {
+    const y0 = Y(Math.max(x.v, 0)), h = Math.max(Math.abs(Y(x.v) - Y(0)), 1);
+    g += '<rect class="' + (x.v >= 0 ? 'bu' : 'bd') + '" x="' + (L + i * bw + bw * 0.12).toFixed(1) + '" y="' + y0.toFixed(1) + '" width="' + Math.max(bw * 0.76, 1).toFixed(1) + '" height="' + h.toFixed(1) + '"><title>' + esc(x.label) + ': ' + inr(x.v, true) + '</title></rect>';
+    if (i % every === 0) g += '<text x="' + (L + i * bw + bw / 2).toFixed(1) + '" y="' + (H - B + 16) + '" text-anchor="middle" class="ax">' + esc(x.short || x.label) + '</text>';
+  });
+  return '<svg viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="' + esc(label) + '">' + g + '<line class="z" x1="' + L + '" x2="' + (W - R) + '" y1="' + Y(0).toFixed(1) + '" y2="' + Y(0).toFixed(1) + '"/></svg>';
+}
+function histSvg(h) {
+  const W = 720, H = 200, L = 40, R = 12, T = 12, B = 40, n = h.length, mx = Math.max.apply(null, h.map(function (b) { return b.count; })) || 1, bw = (W - L - R) / n;
+  let g = '';
+  h.forEach(function (b, i) {
+    const bh = (H - T - B) * b.count / mx, mid = (b.from + b.to) / 2;
+    g += '<rect class="' + (mid >= 0 ? 'bu' : 'bd') + '" x="' + (L + i * bw + 1).toFixed(1) + '" y="' + (H - B - bh).toFixed(1) + '" width="' + Math.max(bw - 2, 1).toFixed(1) + '" height="' + Math.max(bh, b.count ? 1 : 0).toFixed(1) + '"><title>' + inr(b.from, true) + ' to ' + inr(b.to, true) + ': ' + b.count + ' trades</title></rect>';
+    if (b.count) g += '<text x="' + (L + i * bw + bw / 2).toFixed(1) + '" y="' + (H - B - bh - 4).toFixed(1) + '" text-anchor="middle" class="ax">' + b.count + '</text>';
+  });
+  return '<svg viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="Spread of trade results from ' + inr(h[0].from, true) + ' to ' + inr(h[n - 1].to, true) + '.">' + g + '<line class="z" x1="' + L + '" x2="' + (W - R) + '" y1="' + (H - B) + '" y2="' + (H - B) + '"/><text x="' + L + '" y="' + (H - B + 18) + '" class="ax">' + inr(h[0].from, true) + '</text><text x="' + (W - R) + '" y="' + (H - B + 18) + '" text-anchor="end" class="ax">' + inr(h[n - 1].to, true) + '</text></svg>';
+}
+function underSvg(u) {
+  const W = 440, H = 200, L = 66, R = 8, T = 10, B = 22, n = u.length, lo = Math.min.apply(null, u) || -1;
+  const X = function (i) { return L + (W - L - R) * i / Math.max(n - 1, 1); }, Y = function (v) { return T + (H - T - B) * v / lo; };
+  const pts = u.map(function (v, i) { return X(i).toFixed(1) + ',' + Y(v).toFixed(1); }).join(' ');
+  return '<svg viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="Distance below the previous high, deepest ' + inr(lo, true) + '."><line class="g" x1="' + L + '" x2="' + (W - R) + '" y1="' + Y(lo).toFixed(1) + '" y2="' + Y(lo).toFixed(1) + '"/><text x="' + (L - 8) + '" y="' + (Y(lo) + 4).toFixed(1) + '" text-anchor="end" class="ax">' + inr(lo, true) + '</text><text x="' + (L - 8) + '" y="' + (T + 4) + '" text-anchor="end" class="ax">₹0</text><polygon class="uw" points="' + L + ',' + T + ' ' + pts + ' ' + X(n - 1).toFixed(1) + ',' + T + '"/><line class="z" x1="' + L + '" x2="' + (W - R) + '" y1="' + T + '" y2="' + T + '"/></svg>';
+}
+function vStats() {
+  const R = S.result;
+  if (!R) return '<h1>Statistics</h1><div class="card"><p>No run yet. Build a strategy and run it, then the full statistics appear here.</p><div><a class="btn primary" href="#build">Build a strategy</a></div></div>';
+  const r = R.res, st = computeStats(r);
+  const ratio = function (x, d) { return x === null ? '—' : x.toFixed(d === undefined ? 2 : d); };
+  const row = function (label, val, t, cls) { return '<tr><th>' + label + (t ? ' ' + term(t, 'Explain') : '') + '</th><td' + (cls ? ' class="' + cls + '"' : '') + '>' + val + '</td></tr>'; };
+  const sign = function (v) { return v > 0 ? 'pos' : (v < 0 ? 'neg' : ''); };
+  const card = function (title, rows) { return '<section class="card"><h2 class="h3">' + title + '</h2><table class="kv">' + rows + '</table></section>'; };
+  const short = function (lbl) { if (!st.dated) return lbl.replace('Days ', '').split('–')[0]; const p = lbl.split('-'); return ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][Number(p[1]) - 1] + ' ' + p[0].slice(2); };
+  const months = st.months.map(function (m) { return { label: m.label + ' (' + m.trades + ' trades)', short: short(m.label), v: m.net }; });
+  const upM = st.months.filter(function (m) { return m.net > 0; }).length;
+  const hist = st.hist.length ? histSvg(st.hist) : '<p class="muted">No trades, so there is nothing to plot.</p>';
+  const cmp = S.history.length ? '<div class="tablewrap"><table class="cmp"><thead><tr><th>Run</th><th>Data</th><th>After costs</th><th>Trades</th><th>Winning</th><th>Profit factor</th><th>Max drawdown</th><th>Sharpe</th></tr></thead><tbody>' + S.history.map(function (h, i) { return '<tr' + (i === 0 ? ' class="now"' : '') + '><td>' + esc(h.name) + (i === 0 ? ' <span class="pill">latest</span>' : '') + '</td><td>' + esc(h.data) + '</td><td class="' + sign(h.net) + '">' + inr(h.net, true) + '</td><td>' + h.trades + '</td><td>' + pct(h.winRate) + '</td><td>' + ratio(h.pf) + '</td><td>' + inr(-h.maxDD) + '</td><td>' + ratio(h.sharpe) + '</td></tr>'; }).join('') + '</tbody></table></div>' : '<p class="muted">Runs you make in this visit appear here.</p>';
+  return '<div class="note" role="note"><strong>' + (R.kind === 'synthetic' ? 'Practice run on synthetic data.' : 'Run on your own data.') + '</strong> These statistics describe how the rules behaved in this simulation. They do not predict results and are not advice.</div>' +
+    '<div class="headrow"><div><h1>Statistics</h1><p class="muted small">' + esc(R.name) + '. ' + r.daily.length + ' trading days, ' + st.trades + ' trades. ' + esc(R.dataText) + '</p></div><div class="row"><a class="btn" href="#report">Back to report</a><a class="btn" href="#build">Edit strategy</a></div></div>' +
+    '<div id="st-cards" class="grid3">' +
+    card('Trades', row('Trades', String(st.trades)) + row('Winning trades', st.trades ? pct(st.winRate) + ' (' + st.wins + ')' : '—', 'winrate') + row('Average per trade', inr(st.expectancy, true), 'expectancy', sign(st.expectancy)) + row('Average win', inr(st.avgWin, true), '', 'pos') + row('Average loss', inr(-st.avgLoss, true), '', st.avgLoss ? 'neg' : '') + row('Win/loss size ratio', ratio(st.payoff), 'payoff') + row('Best trade', inr(st.best, true), '', sign(st.best)) + row('Worst trade', inr(st.worst, true), '', sign(st.worst))) +
+    card('Risk', row('Maximum drawdown', inr(-st.maxDD), 'drawdown', st.maxDD ? 'neg' : '') + row('Longest time below a high', st.longestDD + ' days', 'drawdown') + row('Longest losing streak', st.maxLossStreak + ' trades', 'streak') + row('Longest winning streak', st.maxWinStreak + ' trades', 'streak') + row('Sharpe ratio (yearly)', ratio(st.sharpe), 'sharpe') + row('Sortino ratio (yearly)', ratio(st.sortino), 'sharpe') + row('Recovery factor', ratio(st.recovery), 'recovery')) +
+    card('Money', row('After costs', inr(r.net, true), 'netgross', sign(r.net)) + row('Before costs', inr(r.gross, true), 'netgross', sign(r.gross)) + row('Profit factor', ratio(st.profitFactor), 'profitfactor') + row('Total costs', inr(r.totalCost), 'charges') + row('Costs per trade', inr(st.costPerTrade), 'charges') + row('Costs as share of before-costs', st.costShare === null ? '—' : pct(st.costShare), 'charges') + row(st.dated ? 'Months in profit' : 'Blocks in profit', upM + ' of ' + st.months.length)) +
+    '</div>' +
+    '<section id="st-months" class="card"><div class="headrow"><h2 class="h3">' + (st.dated ? 'Result by month' : 'Result by block of 21 trading days') + '</h2><span class="muted small">After costs</span></div>' + barSvg(months, (st.dated ? 'Monthly' : 'Block') + ' results after costs: ' + upM + ' of ' + st.months.length + ' positive.') + '</section>' +
+    '<div class="cols"><section id="st-hist" class="card grow"><h2 class="h3">How trade results are spread</h2><p class="muted small">Each bar counts the trades that ended in that range, after costs.</p>' + hist + '</section>' +
+    '<section class="card side"><h2 class="h3">Below the high ' + term('drawdown', 'Explain') + '</h2><p class="muted small">How far the running total sat under its best level so far. Flat at zero means a new high.</p>' + underSvg(st.under) + '</section></div>' +
+    '<section id="st-compare" class="card"><h2 class="h3">Compare your runs</h2><p class="muted small">Kept only while this page is open. These figures are not saved or sent.</p>' + cmp + '</section>';
 }
 function vLearn() { return '<h1>Learn</h1><p class="lead">Every term, setting and report figure used on this site, explained in plain words. These explanations teach concepts. They never tell you what to trade.</p><ul class="gllist wide">' + GLOSSARY.map(function (g) { return entryHtml(g, S.openTerm === g.id); }).join('') + '</ul>'; }
 function vRates() {
@@ -316,8 +390,9 @@ function vDisclaimer() {
     '<li><strong>Your decisions are your own.</strong> You alone are responsible for any trading decision you make and for complying with your broker’s terms and the law.</li></ol></section>';
 }
 function vPrivacy() {
-  return '<h1>Privacy policy</h1><p class="draft">Draft for this preview version, pending legal review.</p><section class="card"><h2 class="h3">The short version</h2><ul class="plain"><li>We never sell your data.</li><li>We show no ads.</li><li>This version has no accounts and sends none of your inputs or results to a server.</li></ul></section>' +
-    '<section class="card"><h2 class="h3">What stays in your browser</h2><ul class="plain"><li><strong>Run count:</strong> today’s date and how many runs you have used, to apply the daily limit.</li><li><strong>Guide progress:</strong> which screens the guide has already shown you.</li><li><strong>Theme:</strong> whether you chose light or dark mode.</li><li><strong>AI key:</strong> only if you add one. It is sent to your AI provider and never to us.</li></ul><div><button type="button" class="btn" data-act="reset">Clear what this browser keeps</button></div><p id="reset-msg" class="msg" role="status"></p></section>' +
+  return '<h1>Privacy policy</h1><p class="draft">Draft for this preview version, pending legal review.</p><section class="card"><h2 class="h3">The short version</h2><ul class="plain"><li>We never sell your data.</li><li>We show no ads.</li><li>This version has no accounts and sends none of your inputs or results to a server.</li><li>We count visits and feature use anonymously, without cookies, to see how the site is used.</li></ul></section>' +
+    '<section class="card"><h2 class="h3">Anonymous usage counts</h2><ul class="plain"><li><strong>What is counted:</strong> which screens are opened, how many simulations are run and which strategy type and data type they used, how often the AI helper is used, whether the device is a phone or a computer, and the website a visitor came from.</li><li><strong>What is not counted:</strong> your strategy settings, results, file name or contents, AI questions or answers, your key, or anything that names you.</li><li><strong>No cookies, no stored IP address:</strong> to count a visitor once a day, the server combines the IP address and browser type with a random value that changes every day and is never saved, and keeps only the scrambled result for that day. It cannot be turned back into an IP address.</li><li><strong>Opting out:</strong> turn on Do Not Track or Global Privacy Control in your browser and nothing is counted.</li><li><strong>Where counts are kept:</strong> as totals per day, for up to 90 days, on the site\u2019s server and its database provider. They are never sold or shared.</li></ul></section>' +
+    '<section class="card"><h2 class="h3">What stays in your browser</h2><ul class="plain"><li><strong>Run count:</strong> today’s date and how many runs you have used, to apply the daily limit.</li><li><strong>Guide progress:</strong> which screens the guide has already shown you.</li><li><strong>Theme:</strong> whether you chose light or dark mode.</li><li><strong>AI key:</strong> only if you add one. It is sent to your AI provider. For xAI (Grok) the request may pass through this site\u2019s relay, which forwards it without storing or logging the key.</li></ul><div><button type="button" class="btn" data-act="reset">Clear what this browser keeps</button></div><p id="reset-msg" class="msg" role="status"></p></section>' +
     '<section class="card"><h2 class="h3">Your own price file</h2><ul class="plain"><li><strong>Where it goes:</strong> nowhere. It is opened inside your browser and stays on your device.</li><li><strong>What we store:</strong> nothing from the file.</li><li><strong>What we use it for:</strong> only to calculate that one run for you.</li><li><strong>Who else sees it:</strong> no one. It is not shared, sold or sent to any AI service.</li><li><strong>When it is gone:</strong> as soon as you close or reload the page.</li></ul></section>' +
     '<section class="card"><h2 class="h3">AI helper</h2><ul class="plain"><li>AI features work only if you add your own key from an AI provider.</li><li><strong>Sent to your provider:</strong> the text you type, your strategy rules and summary figures from your report, under your own agreement with that provider.</li><li><strong>Never sent:</strong> your price file, your name or account details.</li></ul></section>' +
     '<section class="card"><h2 class="h3">What we never ask for</h2><p class="soft">Your broker login, password, PIN, one-time codes, API keys, PAN, Aadhaar, or bank and demat details.</p></section>';
@@ -333,21 +408,23 @@ function vTerms() {
     '<li><strong>Limit of liability.</strong> To the extent the law allows, the operator is not liable for any trading loss or other loss arising from your use of the site.</li><li><strong>Law.</strong> These terms are governed by the laws of India.</li></ol></section>';
 }
 function vAi() {
-  const has = !!S.ai, prov = curProv(), same = has && S.ai.provider === prov, cur = same ? S.ai.model : PROVIDERS[prov].models[0][0], known = modelList().some(function (m) { return m[0] === cur; });
+  const has = !!S.ai, prov = curProv(), same = has && S.ai.provider === prov, cur = same ? S.ai.model : 'auto', auto = cur === 'auto';
+  const now = same ? (S.ai.used || candidates()[0]) : '';
   return '<h1>AI helper</h1><p class="lead">Add your own AI key and the guide cat puts on a wizard hat. It can then turn a plain-English description into a strategy, explain your strategy, and explain your report. It teaches. It never tells you what to trade.</p>' +
-    '<section class="card"><h2 class="h3">Your key</h2><p class="soft">' + (has ? 'Saved in this browser: ' + PROVIDERS[S.ai.provider].name + ' key (ending ' + esc(S.ai.key.slice(-4)) + '). The cat is wearing its hat.' : 'No key saved yet.') + '</p><div class="fgrid">' +
-    '<div class="field"><label for="ai-prov">AI provider</label><select id="ai-prov">' + Object.keys(PROVIDERS).map(function (k) { return '<option value="' + k + '"' + (k === prov ? ' selected' : '') + '>' + PROVIDERS[k].name + '</option>'; }).join('') + '</select></div><div class="field"><label for="ai-key">API key</label><input id="ai-key" type="password" autocomplete="off" spellcheck="false" placeholder="' + (has ? 'Enter a new key to replace it' : 'Paste your key') + '"></div>' +
-    '<div class="field"><label for="ai-model">Model</label><select id="ai-model">' + modelOptions(cur) + '</select></div>' +
-    '<div class="field" id="ai-other-wrap"' + (known ? ' hidden' : '') + '><label for="ai-other">Model name, exactly as your provider writes it</label><input id="ai-other" type="text" spellcheck="false" value="' + esc(known ? '' : cur) + '"></div></div>' +
-    '<p class="muted small">' + (same && S.ai.models ? 'This list came from your own account.' : 'A starter list. After you save a key, the list is replaced with the models your account can use.') + ' Smaller models answer faster and cost less.</p>' +
+    '<section class="card"><h2 class="h3">Your key</h2><p class="soft">' + (has ? 'Saved in this browser: ' + PROVIDERS[S.ai.provider].name + ' key (ending ' + esc(S.ai.key.slice(-4)) + '). The cat is wearing its hat.' : 'No key saved yet. Paste a key and the site works out the provider and the model for you.') + '</p><div class="fgrid">' +
+    '<div class="field"><label for="ai-key">API key</label><input id="ai-key" type="password" autocomplete="off" spellcheck="false" placeholder="' + (has ? 'Enter a new key to replace it' : 'Paste your key') + '"></div>' +
+    '<div class="field"><label for="ai-prov">AI provider</label><select id="ai-prov">' + Object.keys(PROVIDERS).map(function (k) { return '<option value="' + k + '"' + (k === prov ? ' selected' : '') + '>' + PROVIDERS[k].name + '</option>'; }).join('') + '</select></div></div>' +
+    '<p class="muted small">Model: <strong>chosen automatically</strong>' + (same && now ? ' (now ' + esc(now) + ')' : '') + '. The site picks a fast, capable model your key can use, and moves to the next one if it is not available. You do not need to type a model name.</p>' +
+    '<details class="adv"' + (auto ? '' : ' open') + '><summary>Advanced: pick the model yourself</summary><div class="field"><label for="ai-model">Model</label><select id="ai-model">' + modelOptions(cur) + '</select></div><p class="muted small">' + (same && S.ai.models ? 'This list came from your own account.' : 'A starter list. After you save a key, it shows the models your account can use.') + '</p></details>' +
     '<p id="msg" class="msg" role="status"></p><div class="row"><button type="button" class="btn primary" data-act="ai-save">Save key</button>' + (has ? '<button type="button" class="btn" data-act="ai-open">Open the wizard cat</button><button type="button" class="btn" data-act="ai-remove">Remove key</button>' : '') + '</div>' +
     '<p class="muted small">You get a key from your AI provider\u2019s own console, and the provider bills you for what you use. Set a spending limit on the key.</p></section>' +
-    '<section class="card"><h2 class="h3">Where your key and your data go</h2><ul class="plain"><li><strong>Your key:</strong> saved only in this browser on this device. It is sent only to your AI provider, never to us. Remove it here at any time.</li><li><strong>What is sent to the AI:</strong> the text you type, your strategy rules, and summary figures from your report.</li><li><strong>What is never sent:</strong> your price file, your name or any account details.</li><li><strong>What the AI may do:</strong> explain and convert. It is told never to recommend trades or predict results, and answers that look like advice are hidden.</li><li><strong>It can be wrong.</strong> Treat every answer as a starting point and check it.</li></ul></section>';
+    '<section class="card"><h2 class="h3">Where your key and your data go</h2><ul class="plain"><li><strong>Your key:</strong> saved only in this browser on this device. It is sent to your AI provider. If xAI refuses a direct call from the browser, the request passes through this site\u2019s relay on its way to xAI; the relay forwards it and never stores or logs the key. Remove it here at any time.</li><li><strong>What is sent to the AI:</strong> the text you type, your strategy rules, and summary figures from your report.</li><li><strong>What is never sent:</strong> your price file, your name or any account details.</li><li><strong>What the AI may do:</strong> explain and convert. It is told never to recommend trades or predict results, and answers that look like advice are hidden.</li><li><strong>It can be wrong.</strong> Treat every answer as a starting point and check it.</li></ul></section>';
 }
-const RENDER = { ai: vAi, build: vBuild, data: vData, review: vReview, report: vReport, learn: vLearn, rates: vRates, disclaimer: vDisclaimer, privacy: vPrivacy, terms: vTerms };
+const RENDER = { stats: vStats, ai: vAi, build: vBuild, data: vData, review: vReview, report: vReport, learn: vLearn, rates: vRates, disclaimer: vDisclaimer, privacy: vPrivacy, terms: vTerms };
 function render() {
   const v = current();
   $('view').innerHTML = stepper(v) + RENDER[v]();
+  if (S.lastView !== v) { track(S.lastView ? { t: 'view', v: v } : { t: 'view', v: v, r: document.referrer }); S.lastView = v; }
   document.querySelectorAll('[data-nav]').forEach(function (a) { const on = a.getAttribute('data-nav') === v || (a.getAttribute('data-nav') === 'build' && STEPS.some(function (s) { return s[0] === v; })); if (on) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current'); });
   renderExplain();
 }
@@ -376,6 +453,7 @@ const GUIDE = {
   review: [['#rates-card', 'These are the taxes and fees applied to every trade. They are re-checked every month.'], ['#run-btn', 'Press this to run the simulation. You get ' + RUN_CAP + ' runs a day.']],
   report: [['.note', 'Read this first. It says what kind of run this was and what it cannot prove.'], ['#tiles', 'The headline numbers. "After costs" is the only one that would be money in your pocket.'], ['#chart-card', 'The running total, day by day. The gap between the two lines is what costs took.'], ['#checks-card', 'These checks show how fragile the result is. Tap any "Explain" link to learn more. I will nap in the corner now.']]
 };
+GUIDE.stats = [['#st-cards', 'These are the same trades as the report, measured in more ways. Tap Explain on any number.'], ['#st-months', 'Each bar is one month, or one block of 21 trading days for synthetic data. Look for whether the result comes from a few bars or from many.'], ['#st-hist', 'How the trade results are spread. A long tail on the left means rare but large losses.'], ['#st-compare', 'Every run you make in this visit is listed here, so you can compare settings side by side.']];
 const Cat = { steps: null, i: 0, el: null, view: null };
 function seen() { return store.get('fye_guide') || S.memGuide || {}; }
 function catPlace(x, y) { const c = $('cat'); c.style.left = Math.round(x) + 'px'; c.style.top = Math.round(y) + 'px'; c.classList.remove('hop'); void c.offsetWidth; c.classList.add('hop'); }
@@ -435,6 +513,13 @@ function guideDone(all) {
 }
 
 /* ---------- actions ---------- */
+/* Anonymous usage counts (see the Privacy policy). Nothing is sent when the browser asks not to be tracked. */
+function track(ev) {
+  try {
+    if (navigator.doNotTrack === '1' || navigator.globalPrivacyControl === true || window.claude || !/^https?:$/.test(location.protocol)) return;
+    navigator.sendBeacon('api/e', new Blob([JSON.stringify(ev)], { type: 'application/json' }));
+  } catch (e) { /* counting must never break the site */ }
+}
 function setMsg(t) { const m = $('msg'); if (m) m.textContent = t; }
 function syncData() {
   const own = document.querySelector('input[name="src"]:checked').value === 'own';
@@ -449,7 +534,7 @@ function readFile(file) {
   msg.textContent = 'Reading the file in your browser…';
   const fr = new FileReader();
   fr.onload = function () {
-    try { const days = parseOwnData(String(fr.result), Number($('own-dow').value)); S.own = { name: file.name, days: days }; msg.textContent = 'Loaded: ' + file.name + ', ' + days.length + ' trading days. Nothing was sent anywhere.'; }
+    try { const days = parseOwnData(String(fr.result), Number($('own-dow').value)); S.own = { name: file.name, days: days }; track({ t: 'upload' }); msg.textContent = 'Loaded: ' + file.name + ', ' + days.length + ' trading days. Nothing was sent anywhere.'; }
     catch (e) { S.own = null; msg.textContent = e.message; }
   };
   fr.onerror = function () { msg.textContent = 'The file could not be read.'; };
@@ -470,6 +555,10 @@ function run() {
   const res = simulate(days, s, S.costs);
   if (!res.daily.length) return setMsg('No trading day in the data matched these rules. Check the times.');
   S.result = { res: res, checks: res.trades ? runChecks(days, s, S.costs, res, synth ? S.data : null) : {}, kind: synth ? 'synthetic' : 'own', stratKind: s.kind, name: s.name || 'Untitled strategy', words: rulesWords(), dataText: synth ? 'Synthetic data, seed ' + S.data.seed + '.' : 'Your file: ' + S.own.name + '.' };
+  track({ t: 'run', k: s.kind, tpl: S.tpl || 'custom', d: synth ? 'synthetic' : 'own' });
+  const st = computeStats(res);
+  S.history.unshift({ name: S.result.name, data: synth ? 'Synthetic, seed ' + S.data.seed : 'Your file', net: res.net, trades: st.trades, winRate: st.winRate, pf: st.profitFactor, maxDD: res.maxDD, sharpe: st.sharpe });
+  S.history = S.history.slice(0, 10);
   addRun();
   location.hash = 'report';
 }
@@ -518,7 +607,7 @@ document.addEventListener('change', function (e) {
   if (t.id === 'own-agree') { S.agreed = t.checked; setMsg(''); }
   if (t.id === 'syn-market') S.data.market = t.value;
   if (t.id === 'ai-prov') { const k = $('ai-key').value; S.aiProv = t.value; render(); $('ai-key').value = k; }
-  if (t.id === 'ai-model') { $('ai-other-wrap').hidden = t.value !== '__other'; if (S.ai && S.ai.provider === curProv() && t.value !== '__other') { S.ai.model = t.value; store.set('fye_ai', S.ai); setMsg('Model changed to ' + t.value + '.'); } }
+  if (t.id === 'ai-model') { if (S.ai && S.ai.provider === curProv()) { S.ai.model = t.value; S.ai.used = null; store.set('fye_ai', S.ai); setMsg(t.value === 'auto' ? 'The model is chosen automatically again.' : 'Model set to ' + t.value + '.'); } }
   if (t.id === 'own-file') readFile(t.files[0]);
   if (t.id === 'own-dow' && S.own) { S.own = null; $('own-msg').textContent = 'Expiry day changed. Choose the file again.'; }
 });
@@ -537,11 +626,22 @@ const PROVIDERS = {
 };
 function curProv() { return S.aiProv || (S.ai ? S.ai.provider : 'anthropic'); }
 function modelList() { const p = curProv(); return S.ai && S.ai.provider === p && S.ai.models && S.ai.models.length ? S.ai.models : PROVIDERS[p].models; }
-function modelOptions(cur) {
-  const list = modelList(), known = list.some(function (m) { return m[0] === cur; });
-  return list.map(function (m) { return '<option value="' + esc(m[0]) + '"' + (m[0] === cur ? ' selected' : '') + '>' + esc(m[1]) + ' (' + esc(m[0]) + ')</option>'; }).join('') + '<option value="__other"' + (known ? '' : ' selected') + '>Another model\u2026</option>';
+const PREFER = { anthropic: [/sonnet/, /haiku/, /opus/, /claude/], xai: [/^grok-4\.7/, /^grok-4(?!\.)/, /^grok-4/, /^grok/] };
+const NOT_CHAT = /image|vision|imagine|video|embed|tts|audio|speech|transcri/i;
+/* Models to try, best first. 'auto' ranks what the account offers; a model picked by hand is tried alone. */
+function candidates() {
+  if (!S.ai) return [];
+  if (S.ai.model && S.ai.model !== 'auto') return [S.ai.model];
+  const pref = PREFER[S.ai.provider] || [], ids = modelList().map(function (m) { return m[0]; }).filter(function (id) { return !NOT_CHAT.test(id); });
+  const rank = function (id) { for (let i = 0; i < pref.length; i++) if (pref[i].test(id)) return i; return pref.length; };
+  const out = ids.map(function (id, i) { return [rank(id), i, id]; }).sort(function (a, b) { return a[0] - b[0] || a[1] - b[1]; }).map(function (x) { return x[2]; });
+  if (S.ai.used && out.indexOf(S.ai.used) > 0) { out.splice(out.indexOf(S.ai.used), 1); out.unshift(S.ai.used); }
+  return out.length ? out : PROVIDERS[S.ai.provider].models.map(function (m) { return m[0]; });
 }
-function pickedModel() { const v = $('ai-model').value; return v === '__other' ? $('ai-other').value.trim() : v; }
+function modelOptions(cur) {
+  return '<option value="auto"' + (cur === 'auto' ? ' selected' : '') + '>Automatic (recommended)</option>' + modelList().filter(function (m) { return !NOT_CHAT.test(m[0]); }).map(function (m) { return '<option value="' + esc(m[0]) + '"' + (m[0] === cur ? ' selected' : '') + '>' + esc(m[1]) + (m[1] === m[0] ? '' : ' (' + esc(m[0]) + ')') + '</option>'; }).join('');
+}
+function modelLabel() { if (!S.ai) return ''; const c = candidates()[0] || ''; return S.ai.model === 'auto' ? 'Automatic (' + (S.ai.used || c) + ')' : S.ai.model; }
 /* xAI: try the provider directly; if the browser is refused, use this site's own relay when it has one. */
 async function xaiFetch(path, init) {
   try { return await fetch('https://api.x.ai/v1' + path, init); }
@@ -568,27 +668,42 @@ async function loadModels() {
 }
 function updateHat() { $('cat').classList.toggle('wiz', !!S.ai); }
 function aiSave() {
-  const key = $('ai-key').value.trim(), model = pickedModel(), prov = $('ai-prov').value;
+  const key = $('ai-key').value.trim(), prov = $('ai-prov').value, sel = $('ai-model'), model = sel && S.ai && S.ai.provider === prov ? sel.value : 'auto';
   if (!key && (!S.ai || S.ai.provider !== prov)) return setMsg('Paste your ' + PROVIDERS[prov].name + ' key first.');
   if (key && (key.length < 20 || /\s/.test(key))) return setMsg('That does not look like an API key.');
-  if (!model) return setMsg('Choose a model, or type its name.');
-  S.ai = { provider: prov, key: key || S.ai.key, model: model, models: key ? null : S.ai.models };
+  S.ai = { v: 2, provider: prov, key: key || S.ai.key, model: model, models: key ? null : S.ai.models, used: key ? null : S.ai.used };
   S.aiProv = prov;
   store.set('fye_ai', S.ai); updateHat(); render(); setMsg('Checking the key\u2026');
   loadModels().then(function (m) { if (current() === 'ai') { render(); setMsg(m); } });
 }
+async function askOnce(model, prompt, sys) {
+  const x = S.ai.provider === 'xai';
+  const res = x ? await xaiFetch('/chat/completions', { method: 'POST', headers: { 'content-type': 'application/json', authorization: 'Bearer ' + S.ai.key }, body: JSON.stringify({ model: model, max_tokens: 2000, messages: [{ role: 'system', content: sys }, { role: 'user', content: prompt }] }) })
+    : await fetch('https://api.anthropic.com/v1/messages', { method: 'POST', headers: { 'content-type': 'application/json', 'x-api-key': S.ai.key, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' }, body: JSON.stringify({ model: model, max_tokens: 800, system: sys, messages: [{ role: 'user', content: prompt }] }) });
+  const j = await res.json().catch(function () { return null; });
+  const em = j && j.error ? (typeof j.error === 'string' ? j.error : j.error.message) : '';
+  if (!res.ok) {
+    const e = new Error(res.status === 401 || /api key/i.test(em || '') ? 'Your AI provider rejected the key. Check it on the AI helper page.' : (em ? 'AI provider error: ' + em : 'The AI provider returned an error (' + res.status + ').'));
+    e.model = res.status === 404 || (/model/i.test(em || '') && /not.?found|does not exist|invalid|not available|access|permission|unsupported/i.test(em || ''));
+    throw e;
+  }
+  const out = x ? String((((j.choices || [])[0] || {}).message || {}).content || '') : (j.content || []).filter(function (c) { return c.type === 'text'; }).map(function (c) { return c.text; }).join('');
+  if (!out.trim()) throw new Error('The AI returned an empty answer. Try again.');
+  return out;
+}
 async function askAI(prompt, sys) {
   S.aiNote = '';
   try {
-    const x = S.ai.provider === 'xai';
-    const res = x ? await xaiFetch('/chat/completions', { method: 'POST', headers: { 'content-type': 'application/json', authorization: 'Bearer ' + S.ai.key }, body: JSON.stringify({ model: S.ai.model, max_tokens: 2000, messages: [{ role: 'system', content: sys }, { role: 'user', content: prompt }] }) })
-      : await fetch('https://api.anthropic.com/v1/messages', { method: 'POST', headers: { 'content-type': 'application/json', 'x-api-key': S.ai.key, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' }, body: JSON.stringify({ model: S.ai.model, max_tokens: 800, system: sys, messages: [{ role: 'user', content: prompt }] }) });
-    const j = await res.json().catch(function () { return null; });
-    const em = j && j.error ? (typeof j.error === 'string' ? j.error : j.error.message) : '';
-    if (!res.ok) throw new Error(res.status === 401 || /api key/i.test(em || '') ? 'Your AI provider rejected the key. Check it on the AI helper page.' : (em ? 'AI provider error: ' + em : 'The AI provider returned an error (' + res.status + ').'));
-    const out = x ? String((((j.choices || [])[0] || {}).message || {}).content || '') : (j.content || []).filter(function (c) { return c.type === 'text'; }).map(function (c) { return c.text; }).join('');
-    if (!out.trim()) throw new Error('The AI returned an empty answer. Try again, or pick another model.');
-    return out;
+    const list = candidates().slice(0, 4);
+    let last;
+    for (let i = 0; i < list.length; i++) {
+      try {
+        const out = await askOnce(list[i], prompt, sys);
+        if (S.ai && S.ai.used !== list[i]) { S.ai.used = list[i]; store.set('fye_ai', S.ai); const wm = $('wiz-model'); if (wm) wm.textContent = modelLabel(); }
+        return out;
+      } catch (e) { if (!e.model) throw e; last = e; }
+    }
+    throw new Error(S.ai.model === 'auto' ? 'None of the models tried are available on your account. Open Advanced on the AI helper page and pick one from the list.' : 'That model is not available on your account. Set the model back to Automatic on the AI helper page.' + (last ? ' (' + last.message + ')' : ''));
   } catch (e) {
     if (!(e instanceof TypeError)) throw e;
     const sample = window.claude && window.claude.use ? await window.claude.use('sample') : null;
@@ -623,11 +738,12 @@ function applyAiStrategy(j) {
   S.tpl = '';
   const bad = validate(); if (bad) throw new Error('I built it, but one setting needs fixing: ' + bad);
 }
-function openWizard() { if (!S.ai) { location.hash = 'ai'; return; } closeExplain(); $('wizard').hidden = false; $('wiz-model').textContent = S.ai.model; $('wiz-report').disabled = !S.result; $('wiz-close').focus(); }
+function openWizard() { if (!S.ai) { location.hash = 'ai'; return; } closeExplain(); $('wizard').hidden = false; $('wiz-model').textContent = modelLabel(); $('wiz-report').disabled = !S.result; $('wiz-close').focus(); }
 function closeWizard() { $('wizard').hidden = true; }
 async function wizRun(kind) {
   const out = $('wiz-out'), note = $('wiz-note'), s = S.strat;
   let prompt, sys = AI_SYS;
+  track({ t: 'ai', a: kind, p: S.ai ? S.ai.provider : '' });
   if (kind === 'build') {
     const text = $('wiz-text').value.trim();
     if (!text) { out.textContent = 'Describe the strategy first, for example: sell a strangle at 9:30 with a 40% stop and exit at 3 pm.'; return; }
@@ -661,7 +777,7 @@ async function wizRun(kind) {
   document.querySelectorAll('#wizard button[data-act^="wiz-"]').forEach(function (b) { b.disabled = false; });
   $('wiz-report').disabled = !S.result;
 }
-S.ai = store.get('fye_ai'); if (!S.ai || !S.ai.key) S.ai = null; else if (!PROVIDERS[S.ai.provider]) S.ai.provider = 'anthropic';
+S.ai = store.get('fye_ai'); if (!S.ai || !S.ai.key) S.ai = null; else { if (!PROVIDERS[S.ai.provider]) S.ai.provider = 'anthropic'; if (S.ai.v !== 2) { S.ai.v = 2; S.ai.model = 'auto'; S.ai.used = null; store.set('fye_ai', S.ai); } }
 updateHat();
 document.querySelectorAll('.site').forEach(function (n) { n.textContent = SITE; });
 setTheme(store.get('fye_theme') === 'light' ? 'light' : 'dark');

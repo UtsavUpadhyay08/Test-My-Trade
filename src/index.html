@@ -61,7 +61,7 @@ section.side.card{gap:12px}.stackgap{display:flex;flex-direction:column;gap:18px
 .field{display:flex;flex-direction:column;gap:6px}
 .field label,.lab label{font-size:13px;color:var(--muted)}
 .lab{display:flex;flex-wrap:wrap;gap:4px 10px;align-items:baseline;justify-content:space-between;min-height:20px}
-input[type=text],input[type=number],input[type=search],select{width:100%;padding:10px 12px;min-height:44px;border-radius:8px;border:1px solid var(--line2);background:var(--field);color:var(--text);font:inherit}
+input[type=text],input[type=password],input[type=number],input[type=search],select{width:100%;padding:10px 12px;min-height:44px;border-radius:8px;border:1px solid var(--line2);background:var(--field);color:var(--text);font:inherit}
 input[type=checkbox],input[type=radio]{width:20px;height:20px;flex:none;accent-color:var(--blue)}
 .scroll{overflow-x:auto}
 table{border-collapse:collapse;width:100%}
@@ -176,6 +176,11 @@ input:focus,select:focus,textarea:focus{border-color:var(--blue);box-shadow:0 0 
  .ln{stroke-dasharray:4000;stroke-dashoffset:4000;animation:draw 1.6s ease-out forwards}@keyframes draw{to{stroke-dashoffset:0}}
  .track div{transform-origin:left;animation:grow .7s ease-out both}@keyframes grow{from{transform:scaleX(0)}}
 }
+.grid3{display:grid;grid-template-columns:repeat(auto-fit,minmax(270px,1fr));gap:20px;margin-bottom:20px}
+table.kv{width:100%;border-collapse:collapse}table.kv td{white-space:nowrap;padding-left:10px}table.kv td.pos,table.cmp td.pos{color:var(--good)}table.kv td.neg,table.cmp td.neg{color:var(--bad)}
+.uw{fill:var(--bad);fill-opacity:.22;stroke:var(--bad);stroke-width:1.5}
+.tablewrap{overflow-x:auto}table.cmp{width:100%;border-collapse:collapse;font-size:14px;min-width:640px}table.cmp th{text-align:left;font-weight:500;color:var(--soft);padding:8px 10px;border-bottom:1px solid var(--line2)}table.cmp td{padding:8px 10px;border-bottom:1px solid var(--line)}table.cmp td:nth-child(n+3){font-family:'JetBrains Mono',monospace;font-size:13px}table.cmp tr.now td{background:var(--field)}
+details.adv{border:1px solid var(--line);border-radius:10px;padding:10px 14px;margin:6px 0 12px}details.adv summary{cursor:pointer;color:var(--soft);min-height:28px}details.adv[open] summary{margin-bottom:10px}
 </style>
 </head>
 <body>
@@ -185,7 +190,7 @@ input:focus,select:focus,textarea:focus{border-color:var(--blue);box-shadow:0 0 
 <a data-nav="build" href="#build">New run</a>
 <a data-nav="learn" href="#learn">Learn</a>
 <a data-nav="rates" href="#rates">Rates</a>
-<a data-nav="ai" href="#ai">AI helper</a>
+<a data-nav="stats" href="#stats">Statistics</a><a data-nav="ai" href="#ai">AI helper</a>
 </nav>
 <button type="button" id="theme-btn" class="btn small" data-act="theme">Light mode</button>
 <button type="button" class="btn small" data-act="explain">Explain</button>

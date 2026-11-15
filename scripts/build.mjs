@@ -15,5 +15,5 @@ const engine = readFileSync(join(src, 'engine.js'), 'utf8').split('if (typeof mo
 const ui = readFileSync(join(src, 'ui.js'), 'utf8');
 writeFileSync(join(dist, 'app.js'), '"use strict";\n' + engine + '\n' + ui);
 
-for (const f of ['index.html', 'favicon.svg', 'robots.txt', '_headers']) copyFileSync(join(src, f), join(dist, f));
-console.log('Built dist/ (index.html, app.js, favicon.svg, robots.txt, _headers)');
+for (const f of ['index.html', 'admin.html', 'admin.js', 'favicon.svg', 'robots.txt', '_headers']) copyFileSync(join(src, f), join(dist, f));
+console.log('Built dist/ (index.html, app.js, admin.html, admin.js, favicon.svg, robots.txt, _headers)');
